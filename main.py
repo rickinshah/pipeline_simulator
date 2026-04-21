@@ -527,7 +527,7 @@ class App(tk.Tk):
         bp.columnconfigure(0, weight=1)
         bp.columnconfigure(1, weight=1)
 
-        self._mkbtn(bp, "▶  LOAD & RUN", CYAN,  self._do_load, 0, 0, cs=2)
+        self._mkbtn(bp, "▶  LOAD", CYAN,  self._do_load, 0, 0, cs=2)
         self.step_btn = self._mkbtn(bp, "⏭  STEP",  BLUE,  self._do_step, 1, 0)
         self.auto_btn = self._mkbtn(bp, "⚡  AUTO",  GREEN, self._do_auto, 1, 1)
         self._mkbtn(bp, "↺   RESET",     FG2,   self._do_reset, 2, 0, cs=2)
