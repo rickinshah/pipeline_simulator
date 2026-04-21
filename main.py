@@ -7,27 +7,47 @@ import re
 import random
 
 # ─────────────────────────────────────────────────────────────────────────────
+# FONT SELECTION  (JetBrains Mono → Consolas → Courier New)
+# ─────────────────────────────────────────────────────────────────────────────
+def _pick_font():
+    import tkinter.font as tkfont
+    try:
+        root = tk.Tk(); root.withdraw()
+        available = set(tkfont.families())
+        root.destroy()
+    except Exception:
+        available = set()
+    for name in ("JetBrains Mono", "Consolas", "Courier New"):
+        if name in available:
+            return name
+    return "Courier New"
+
+_CODE_FONT_TEMP = _pick_font()
+
+# ─────────────────────────────────────────────────────────────────────────────
 # COLOUR PALETTE
 # ─────────────────────────────────────────────────────────────────────────────
-BG   = "#0d1117"
-BG2  = "#161b22"
-BG3  = "#21262d"
-FG   = "#e6edf3"
-FG2  = "#8b949e"
-FG3  = "#3a4048"
+BG   = "#12141a"   # deep navy-black — easier on eyes than pure black
+BG2  = "#1a1d27"   # panel background — warm dark navy
+BG3  = "#222638"   # section headers / raised elements
+BG4  = "#1e2130"   # editor / text widget background
 
-CYAN   = "#39d0d8"
-GREEN  = "#3fb950"
-AMBER  = "#d29922"
-RED    = "#f85149"
-PURPLE = "#a371f7"
-BLUE   = "#58a6ff"
-ORANGE = "#e3b341"
+FG   = "#cdd6f4"   # main text — soft lavender-white (easy to read)
+FG2  = "#89b4fa"   # secondary text — muted blue
+FG3  = "#45475a"   # disabled / very dim text
+
+CYAN   = "#89dceb"  # bright sky blue
+GREEN  = "#a6e3a1"  # soft mint green
+AMBER  = "#f9e2af"  # warm yellow
+RED    = "#f38ba8"  # soft rose red
+PURPLE = "#cba6f7"  # pastel purple (Mauve)
+BLUE   = "#89b4fa"  # periwinkle blue
+ORANGE = "#fab387"  # soft peach-orange
 
 STAGE_BG = {
-    "IF":  "#112233", "ID": "#111a2e",
-    "OF":  "#161133", "EX": "#231133",
-    "MEM": "#2a1122", "WB": "#112211",
+    "IF":  "#141e2e", "ID": "#131c30",
+    "OF":  "#1a1535", "EX": "#241535",
+    "MEM": "#2a1525", "WB": "#152514",
 }
 STAGE_ACCENT = {
     "IF": CYAN, "ID": BLUE, "OF": PURPLE,
@@ -37,17 +57,19 @@ OP_COLOR = {
     "MOV": BLUE,
     "ADD": GREEN, "SUB": GREEN, "AND": GREEN,
     "OR":  GREEN, "XOR": GREEN, "NEG": GREEN,
-    "LD":  ORANGE, "ST": "#f0883e",
+    "LD":  ORANGE, "ST": "#fab387",
     "JMP": RED,
     "BEQ": PURPLE, "BNE": PURPLE, "BLT": PURPLE,
     "BGT": PURPLE, "BLE": PURPLE, "BGE": PURPLE,
 }
 
-FM  = ("Courier New", 10)
-FMB = ("Courier New", 10, "bold")
-FMS = ("Courier New",  9)
-FMT = ("Courier New", 16, "bold")
-FLB = ("Courier New",  8, "bold")
+# Font: JetBrains Mono is ideal; fall back to Consolas then Courier New
+_CODE_FONT = _CODE_FONT_TEMP
+FM  = (_CODE_FONT, 10)
+FMB = (_CODE_FONT, 10, "bold")
+FMS = (_CODE_FONT,  9)
+FMT = (_CODE_FONT, 15, "bold")
+FLB = (_CODE_FONT,  8, "bold")
 
 STAGES = ["IF", "ID", "OF", "EX", "MEM", "WB"]
 BRANCH_OPS = {"JMP","BEQ","BNE","BLT","BGT","BLE","BGE"}
@@ -382,8 +404,8 @@ class Token:
             fill=color, outline="#ffffff", width=1, tags="tok")
         self.text_id = canvas.create_text(
             x + w/2, y + h/2,
-            text=text, fill="#0c1014",
-            font=("Courier New", 9, "bold"),
+            text=text, fill="#11111b",
+            font=("JetBrains Mono", 9, "bold"),
             width=w - 12, tags="tok")
 
     def set_text(self, text):
@@ -440,8 +462,12 @@ class App(tk.Tk):
         super().__init__()
         self.title("Scalar-6  Pipeline Simulator")
         self.configure(bg=BG)
-        self.minsize(1000, 640)
+        self.minsize(400, 300)   # window can go very small — content scrolls
         self.geometry("1280x800")
+
+        # Minimum content dimensions — if window is smaller, scrollbars appear
+        self._MIN_W = 1060
+        self._MIN_H = 660
 
         self.engine    = None
         self.auto_run  = False
@@ -462,31 +488,144 @@ class App(tk.Tk):
     # UI BUILD
     # ══════════════════════════════════════════════════════════════════════════
     def _build(self):
+        # ── Fixed top bar (always visible, never scrolls) ──────────────────
         top = tk.Frame(self, bg=BG, pady=5)
         top.pack(fill="x", padx=12)
         tk.Label(top, text="◈  SCALAR-6  PIPELINE  VISUALIZER",
                  font=FMT, fg=CYAN, bg=BG).pack(side="left")
         self.cycle_lbl = tk.Label(top, text="CYCLE  —",
-                                   font=("Courier New",13,"bold"), fg=FG2, bg=BG)
+                                   font=(_CODE_FONT, 13, "bold"), fg=FG2, bg=BG)
         self.cycle_lbl.pack(side="right", padx=8)
 
-        body = tk.Frame(self, bg=BG)
-        body.pack(fill="both", expand=True, padx=8, pady=(0,8))
-        body.columnconfigure(0, minsize=230, weight=1)
-        body.columnconfigure(1, weight=4)
-        body.columnconfigure(2, minsize=210, weight=1)
-        body.rowconfigure(0, weight=1)
+        # ── Scrollable viewport ────────────────────────────────────────────
+        # Outer frame holds the canvas + scrollbars
+        outer = tk.Frame(self, bg=BG)
+        outer.pack(fill="both", expand=True)
 
-        left   = tk.Frame(body, bg=BG)
-        center = tk.Frame(body, bg=BG)
-        right  = tk.Frame(body, bg=BG)
-        left.grid  (row=0, column=0, sticky="nsew", padx=(0,5))
-        center.grid(row=0, column=1, sticky="nsew", padx=2)
-        right.grid (row=0, column=2, sticky="nsew", padx=(5,0))
+        self._hbar = tk.Scrollbar(outer, orient="horizontal", bg=BG3,
+                                   troughcolor=BG2, activebackground=BG3)
+        self._vbar = tk.Scrollbar(outer, orient="vertical",   bg=BG3,
+                                   troughcolor=BG2, activebackground=BG3)
+        self._hbar.pack(side="bottom", fill="x")
+        self._vbar.pack(side="right",  fill="y")
+
+        # The viewport canvas — NOT the pipeline canvas, just a scroll container
+        self._viewport = tk.Canvas(outer, bg=BG, highlightthickness=0,
+                                    xscrollcommand=self._hbar.set,
+                                    yscrollcommand=self._vbar.set)
+        self._viewport.pack(side="left", fill="both", expand=True)
+        self._hbar.config(command=self._viewport.xview)
+        self._vbar.config(command=self._viewport.yview)
+
+        # Inner frame lives inside the viewport canvas
+        self._inner = tk.Frame(self._viewport, bg=BG)
+        self._vp_win = self._viewport.create_window(
+            (0, 0), window=self._inner, anchor="nw")
+
+        # Bind resize events to update scroll region and stretch inner frame
+        self._inner.bind("<Configure>", self._on_inner_configure)
+        self._viewport.bind("<Configure>", self._on_viewport_configure)
+
+        # Mouse-wheel scrolling (works on Windows/macOS/Linux)
+        self._viewport.bind_all("<MouseWheel>",         self._on_mousewheel)
+        self._viewport.bind_all("<Button-4>",           self._on_mousewheel)
+        self._viewport.bind_all("<Button-5>",           self._on_mousewheel)
+        self._viewport.bind_all("<Shift-MouseWheel>",   self._on_shift_mousewheel)
+        self._viewport.bind_all("<Shift-Button-4>",     self._on_shift_mousewheel)
+        self._viewport.bind_all("<Shift-Button-5>",     self._on_shift_mousewheel)
+        self._viewport.bind_all("<Shift-Left>",         self._on_shift_left)
+        self._viewport.bind_all("<Shift-Right>",        self._on_shift_right)
+
+        # ── Build the three columns inside _inner ──────────────────────────
+        self._inner.columnconfigure(0, minsize=240, weight=1)
+        self._inner.columnconfigure(1, weight=4)
+        self._inner.columnconfigure(2, minsize=220, weight=1)
+        self._inner.rowconfigure(0, weight=1)
+
+        left   = tk.Frame(self._inner, bg=BG)
+        center = tk.Frame(self._inner, bg=BG)
+        right  = tk.Frame(self._inner, bg=BG)
+        left.grid  (row=0, column=0, sticky="nsew", padx=(8,5),  pady=(0,8))
+        center.grid(row=0, column=1, sticky="nsew", padx=2,      pady=(0,8))
+        right.grid (row=0, column=2, sticky="nsew", padx=(5,8),  pady=(0,8))
 
         self._build_left(left)
         self._build_center(center)
         self._build_right(right)
+
+    # ── Viewport / scroll helpers ──────────────────────────────────────────
+    def _on_inner_configure(self, event=None):
+        """Update scroll region whenever inner frame changes size."""
+        self._viewport.configure(scrollregion=self._viewport.bbox("all"))
+        self._update_scrollbars()
+
+    def _on_viewport_configure(self, event=None):
+        """Stretch inner frame to fill viewport when window is large enough,
+        and hide scrollbars when content fits comfortably."""
+        self._update_scrollbars()
+        vw = self._viewport.winfo_width()
+        vh = self._viewport.winfo_height()
+        iw = self._inner.winfo_reqwidth()
+        ih = self._inner.winfo_reqheight()
+        # If viewport is wider/taller than content, expand inner to fill it
+        new_w = max(vw, iw)
+        new_h = max(vh, ih)
+        self._viewport.itemconfig(self._vp_win, width=new_w, height=new_h)
+        # Propagate extra height into the inner grid row so the pipeline canvas grows
+        self._inner.rowconfigure(0, minsize=max(new_h - 16, ih), weight=1)
+
+    def _update_scrollbars(self):
+        """Show scrollbars only when content overflows the viewport."""
+        vw = self._viewport.winfo_width()
+        vh = self._viewport.winfo_height()
+        iw = self._inner.winfo_reqwidth()
+        ih = self._inner.winfo_reqheight()
+        # Horizontal bar
+        if vw >= iw:
+            self._hbar.pack_forget()
+        else:
+            if not self._hbar.winfo_ismapped():
+                self._hbar.pack(side="bottom", fill="x")
+        # Vertical bar
+        if vh >= ih:
+            self._vbar.pack_forget()
+        else:
+            if not self._vbar.winfo_ismapped():
+                self._vbar.pack(side="right", fill="y")
+
+    def _on_mousewheel(self, event):
+        """Vertical scroll via mouse wheel. Redirects to horizontal if Shift is held."""
+        # event.state bit 0x1 = Shift on all platforms
+        if event.state & 0x1:
+            self._on_shift_mousewheel(event)
+            return
+        if self._vbar.winfo_ismapped():
+            if event.num == 4:
+                self._viewport.yview_scroll(-1, "units")
+            elif event.num == 5:
+                self._viewport.yview_scroll(1, "units")
+            else:
+                self._viewport.yview_scroll(int(-event.delta / 40), "units")
+
+    def _on_shift_mousewheel(self, event):
+        """Horizontal scroll via Shift+wheel (all platforms)."""
+        if self._hbar.winfo_ismapped():
+            if event.num == 4:
+                self._viewport.xview_scroll(-1, "units")
+            elif event.num == 5:
+                self._viewport.xview_scroll(1, "units")
+            else:
+                self._viewport.xview_scroll(int(-event.delta / 40), "units")
+
+    def _on_shift_left(self, event):
+        """Horizontal scroll left via Shift+Left."""
+        if self._hbar.winfo_ismapped():
+            self._viewport.xview_scroll(-3, "units")
+
+    def _on_shift_right(self, event):
+        """Horizontal scroll right via Shift+Right."""
+        if self._hbar.winfo_ismapped():
+            self._viewport.xview_scroll(3, "units")
 
     # ── LEFT
     def _build_left(self, p):
@@ -496,17 +635,18 @@ class App(tk.Tk):
         # Samples panel
         sf = self._section(p, "EXAMPLES", row=0)
         for name in SAMPLES:
-            tk.Button(sf, text=name, font=("Courier New",8),
+            tk.Button(sf, text=name, font=("JetBrains Mono",8),
                       bg=BG3, fg=FG2, activebackground=BG2, activeforeground=CYAN,
-                      relief="flat", bd=0, cursor="hand2", pady=3,
+                      relief="flat", bd=0, cursor="hand2", pady=4,
                       command=lambda n=name: self._load_sample(n)
                       ).pack(fill="x", pady=1)
 
         # Editor
         ef = self._section(p, "PROGRAM EDITOR", row=1, expand=True)
-        self.editor = tk.Text(ef, bg=BG, fg=FG, insertbackground=CYAN,
-                               font=FM, bd=0, padx=6, pady=6,
-                               selectbackground="#264f78", undo=True)
+        self.editor = tk.Text(ef, bg=BG4, fg=FG, insertbackground=CYAN,
+                               font=FM, bd=0, padx=8, pady=8,
+                               selectbackground="#3d4577", selectforeground=FG,
+                               undo=True, relief="flat")
         self.editor.pack(fill="both", expand=True)
         self.editor.insert("1.0", SAMPLES["Arithmetic"])
 
@@ -519,7 +659,7 @@ class App(tk.Tk):
             "LD Rd,[Rs+off]   ST Rs,[Rd+off]\n"
             "JMP ±off\n"
             "BEQ/BNE/BLT/BGT/BLE/BGE Ra,Rb,±off"
-        ), font=("Courier New",8), fg=FG3, bg=BG2, justify="left").pack(anchor="w")
+        ), font=("JetBrains Mono",8), fg="#6c7086", bg=BG2, justify="left").pack(anchor="w")
 
         # Buttons
         bp = tk.Frame(p, bg=BG)
@@ -538,22 +678,22 @@ class App(tk.Tk):
         # Speed
         sp = tk.Frame(p, bg=BG)
         sp.grid(row=4, column=0, sticky="ew", pady=(4,0))
-        tk.Label(sp, text="FAST", font=FLB, fg=FG3, bg=BG).pack(side="left", padx=4)
+        tk.Label(sp, text="FAST", font=(_CODE_FONT, 8, "bold"), fg=FG3, bg=BG).pack(side="left", padx=4)
         self.speed_var = tk.IntVar(value=700)
         tk.Scale(sp, from_=150, to=2000, orient="horizontal",
                  variable=self.speed_var, bg=BG, fg=FG2, troughcolor=BG3,
                  highlightthickness=0, bd=0, showvalue=False
                  ).pack(side="left", fill="x", expand=True)
-        tk.Label(sp, text="SLOW", font=FLB, fg=FG3, bg=BG).pack(side="left", padx=4)
+        tk.Label(sp, text="SLOW", font=(_CODE_FONT, 8, "bold"), fg=FG3, bg=BG).pack(side="left", padx=4)
 
     def _section(self, parent, title, row, expand=False):
-        outer = tk.Frame(parent, bg=BG2)
+        outer = tk.Frame(parent, bg=BG2, bd=0, relief="flat")
         kw = dict(row=row, column=0, sticky="nsew" if expand else "ew", pady=(0,4))
         outer.grid(**kw)
         if expand:
             parent.rowconfigure(row, weight=1)
-        tk.Label(outer, text=title, font=FLB, fg=FG2, bg=BG3,
-                 padx=8, pady=4).pack(fill="x")
+        tk.Label(outer, text=title, font=FLB, fg=CYAN, bg=BG3,
+                 padx=8, pady=5).pack(fill="x")
         inner = tk.Frame(outer, bg=BG2, padx=6, pady=4)
         inner.pack(fill="both", expand=True)
         return inner
@@ -571,24 +711,25 @@ class App(tk.Tk):
         p.rowconfigure(1, weight=1)
         p.columnconfigure(0, weight=1)
 
-        hdr = tk.Frame(p, bg=BG3, padx=8, pady=4)
+        hdr = tk.Frame(p, bg=BG3, padx=8, pady=5)
         hdr.grid(row=0, column=0, sticky="ew", pady=(0,4))
-        tk.Label(hdr, text="PIPELINE DATAPATH", font=FLB, fg=FG2, bg=BG3).pack(side="left")
+        tk.Label(hdr, text="PIPELINE DATAPATH", font=FLB, fg=CYAN, bg=BG3).pack(side="left")
         self.status_lbl = tk.Label(hdr, text="", font=FLB, fg=FG2, bg=BG3)
         self.status_lbl.pack(side="right")
 
-        self.canvas = tk.Canvas(p, bg=BG, highlightthickness=0)
+        self.canvas = tk.Canvas(p, bg=BG2, highlightthickness=0, height=260)
         self.canvas.grid(row=1, column=0, sticky="nsew")
         self.canvas.bind("<Configure>", self._on_resize)
 
         log_wrap = tk.Frame(p, bg=BG2)
         log_wrap.grid(row=2, column=0, sticky="ew", pady=(4,0))
-        tk.Label(log_wrap, text="EVENT LOG", font=FLB, fg=FG2, bg=BG3,
-                 padx=8, pady=3).pack(fill="x")
-        self.log = tk.Text(log_wrap, bg=BG, fg=FG2, font=FMS, bd=0,
-                            padx=6, pady=4, height=7,
-                            state="disabled", wrap="word")
-        sb = tk.Scrollbar(log_wrap, command=self.log.yview, bg=BG3)
+        tk.Label(log_wrap, text="EVENT LOG", font=FLB, fg=CYAN, bg=BG3,
+                 padx=8, pady=5).pack(fill="x")
+        self.log = tk.Text(log_wrap, bg=BG4, fg=FG2, font=FMS, bd=0,
+                            padx=8, pady=6, height=7,
+                            state="disabled", wrap="word", relief="flat")
+        sb = tk.Scrollbar(log_wrap, command=self.log.yview, bg=BG3,
+                          troughcolor=BG2, activebackground=BG3)
         self.log.config(yscrollcommand=sb.set)
         self.log.pack(side="left", fill="x", expand=True)
         sb.pack(side="right", fill="y")
@@ -604,8 +745,8 @@ class App(tk.Tk):
 
         rf = tk.Frame(p, bg=BG2)
         rf.grid(row=0, column=0, sticky="ew", pady=(0,4))
-        tk.Label(rf, text="REGISTER FILE", font=FLB, fg=FG2, bg=BG3,
-                 padx=8, pady=4).pack(fill="x")
+        tk.Label(rf, text="REGISTER FILE", font=FLB, fg=CYAN, bg=BG3,
+                 padx=8, pady=5).pack(fill="x")
         grid = tk.Frame(rf, bg=BG2, padx=4, pady=4)
         grid.pack(fill="both")
         self.reg_labels = {}
@@ -614,34 +755,35 @@ class App(tk.Tk):
             row_, col_ = divmod(i, 2)
             tk.Label(grid, text=f"{rn:>3}", font=FMB, fg=FG2, bg=BG2,
                      width=4, anchor="e").grid(row=row_, column=col_*2,
-                                               padx=(2,0), pady=1, sticky="e")
-            vl = tk.Label(grid, text="0", font=FM, fg=FG, bg=BG3,
+                                               padx=(4,0), pady=2, sticky="e")
+            vl = tk.Label(grid, text="0", font=FM, fg=FG, bg=BG4,
                           width=8, anchor="e", padx=3)
             vl.grid(row=row_, column=col_*2+1, padx=(2,6), pady=1, sticky="ew")
             self.reg_labels[rn] = vl
 
         hf = tk.Frame(p, bg=BG2)
         hf.grid(row=1, column=0, sticky="ew", pady=(0,4))
-        tk.Label(hf, text="HAZARD STATUS", font=FLB, fg=FG2, bg=BG3,
-                 padx=8, pady=4).pack(fill="x")
+        tk.Label(hf, text="HAZARD STATUS", font=FLB, fg=CYAN, bg=BG3,
+                 padx=8, pady=5).pack(fill="x")
         self.hazard_lbl = tk.Label(hf, text="--  clear", font=FMS,
-                                    fg=GREEN, bg=BG2, padx=8, pady=6,
+                                    fg=GREEN, bg=BG2, padx=8, pady=8,
                                     justify="left", anchor="w")
         self.hazard_lbl.pack(fill="x")
 
         mf = tk.Frame(p, bg=BG2)
         mf.grid(row=2, column=0, sticky="nsew", pady=(0,4))
-        tk.Label(mf, text="MEMORY", font=FLB, fg=FG2, bg=BG3,
-                 padx=8, pady=4).pack(fill="x")
-        self.mem_text = tk.Text(mf, bg=BG, fg=ORANGE, font=FMS, bd=0,
-                                 padx=6, pady=4, height=7, state="disabled")
+        tk.Label(mf, text="MEMORY", font=FLB, fg=CYAN, bg=BG3,
+                 padx=8, pady=5).pack(fill="x")
+        self.mem_text = tk.Text(mf, bg=BG4, fg=ORANGE, font=FMS, bd=0,
+                                 padx=8, pady=6, height=7, state="disabled",
+                                 relief="flat")
         self.mem_text.pack(fill="both", expand=True)
 
-        pcf = tk.Frame(p, bg=BG3, padx=8, pady=6)
+        pcf = tk.Frame(p, bg=BG3, padx=8, pady=8)
         pcf.grid(row=3, column=0, sticky="ew")
         tk.Label(pcf, text="PC ->", font=FLB, fg=FG2, bg=BG3).pack(side="left")
         self.pc_lbl = tk.Label(pcf, text="--",
-                                font=("Courier New",14,"bold"), fg=CYAN, bg=BG3)
+                                font=(_CODE_FONT, 14, "bold"), fg=CYAN, bg=BG3)
         self.pc_lbl.pack(side="right")
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -688,13 +830,13 @@ class App(tk.Tk):
                                 fill=acc, outline="", tags="stage")
             # label above
             c.create_text((x0+x1)/2, y0-15, text=s,
-                           font=("Courier New",11,"bold"), fill=acc, tags="stage")
+                           font=("JetBrains Mono",11,"bold"), fill=acc, tags="stage")
 
             # arrow
             if i < n-1:
                 ay = (y0+y1)/2
                 c.create_line(x1+1, ay, x1+GAP-1, ay,
-                               fill="#40484f", width=2,
+                               fill="#585b70", width=2,
                                arrow="last", arrowshape=(7,9,4), tags="stage")
 
             self._stage_rects[s] = (x0, y0, x1, y1)
@@ -708,10 +850,10 @@ class App(tk.Tk):
                 tx, ty, tw, th = self._token_geom(stage)
                 self.canvas.create_rectangle(
                     tx, ty, tx+tw, ty+th,
-                    fill="", outline="#3a4048", dash=(4,5), width=1, tags="bubble")
+                    fill="", outline="#45475a", dash=(4,5), width=1, tags="bubble")
                 self.canvas.create_text(
                     tx+tw/2, ty+th/2, text="bubble",
-                    font=("Courier New",8), fill="#3a4048", tags="bubble")
+                    font=("JetBrains Mono",8), fill="#45475a", tags="bubble")
 
     def _token_geom(self, stage):
         """Return (x, y, w, h) for a token inside stage."""
@@ -939,8 +1081,8 @@ class App(tk.Tk):
             val = regs.get(rn, 0)
             lbl.config(text=str(val))
             if val != self._prev_regs.get(rn, 0):
-                lbl.config(fg=GREEN, bg="#1a3a1a")
-                self.after(500, lambda l=lbl: l.config(fg=FG, bg=BG3))
+                lbl.config(fg=GREEN, bg="#1e3a1e")
+                self.after(500, lambda l=lbl: l.config(fg=FG, bg=BG4))
         self._prev_regs = dict(regs)
 
     def _update_mem(self, mem):
