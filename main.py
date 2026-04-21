@@ -231,7 +231,7 @@ class Engine:
         """Return the most up-to-date value for reg, checking forward paths first.
         Priority: EX result > MEM result > WB result > register file."""
         p = self.pipe
-        for stage in ("EX", "MEM", "WB"):
+        for stage in ("EX", "MEM"):
             i = p[stage]
             if i and i.dest == reg and i.op not in BRANCH_OPS and i.op != "ST":
                 if i.result is not None:
@@ -295,6 +295,19 @@ class Engine:
         for src, prod in stall_info:
             events.append(("stall", f"Load-use stall: {p['ID'].label()} needs {src} (forwarding cannot help)"))
 
+        # EX — execute before shifts so _forward_val sees MEM/WB producers correctly
+        if p["EX"]:
+            ex = p["EX"]
+            # Detect and log forwarding paths before exec reads them
+            fwd_srcs = [s for s in (ex.src1, ex.src2) if s and not self.READY.get(s, True)]
+            self._exec(ex)
+            for src in fwd_srcs:
+                for stage in ("MEM", "WB"):
+                    fwd = self.pipe[stage]
+                    if fwd and fwd.dest == src and fwd.result is not None:
+                        events.append(("fwd", f"FWD {stage}->EX: {src} = {fwd.result}  ({fwd.label()} -> {ex.label()})"))
+                        break
+
         # MEM
         if p["MEM"]:
             i = p["MEM"]
@@ -307,18 +320,6 @@ class Engine:
 
         p["WB"]  = p["MEM"]
         p["MEM"] = p["EX"]
-
-        if p["EX"]:
-            ex = p["EX"]
-            # Detect and log forwarding paths before exec reads them
-            fwd_srcs = [s for s in (ex.src1, ex.src2) if s and not self.READY.get(s, True)]
-            self._exec(ex)
-            for src in fwd_srcs:
-                for stage in ("EX", "MEM", "WB"):
-                    fwd = self.pipe[stage]
-                    if fwd and fwd is not ex and fwd.dest == src and fwd.result is not None:
-                        events.append(("fwd", f"FWD {stage}->EX: {src} = {fwd.result}  ({fwd.label()} -> {ex.label()})"))
-                        break
 
         # Branch resolution
         if p["EX"] and p["EX"].op in BRANCH_OPS and p["EX"].branch_taken:
