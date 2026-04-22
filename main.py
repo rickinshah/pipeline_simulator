@@ -1558,17 +1558,8 @@ class App(tk.Tk):
         fwd_active = any(kind == "fwd" for kind, _ in state["events"])
         self._sync_tokens(state["pipe"], state["stall"], state["branch_flush"], fwd_active)
 
-        # Parse forwarding events into (from_stage, to_stage) pairs and draw arrows
-        # Event format: "FWD MEM->EX: R1 = 5  (...)" or "FWD MEM->MEM (WB->MEM): ..."
-        import re as _re
-        fwd_pairs = []
-        for kind, msg in state["events"]:
-            if kind == "fwd":
-                # Capture the first SRC->DST pattern, e.g. "MEM->EX" or "WB->MEM"
-                m = _re.search(r'FWD\s+(\w+)->(\w+)', msg)
-                if m:
-                    fwd_pairs.append((m.group(1), m.group(2)))
-        self._draw_forwarding_arrows(fwd_pairs)
+        self.canvas.delete("fwd_arrow")
+
 
         if state["stall"]:
             self.status_lbl.config(text="STALL", fg=AMBER)
