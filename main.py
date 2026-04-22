@@ -25,43 +25,75 @@ def _pick_font():
 _CODE_FONT_TEMP = _pick_font()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# COLOUR PALETTE
+# THEME — dark only
 # ─────────────────────────────────────────────────────────────────────────────
-BG   = "#12141a"   # deep navy-black — easier on eyes than pure black
-BG2  = "#1a1d27"   # panel background — warm dark navy
-BG3  = "#222638"   # section headers / raised elements
-BG4  = "#1e2130"   # editor / text widget background
+_DARK_THEME = dict(
+    BG   = "#12141a",
+    BG2  = "#1a1d27",
+    BG3  = "#222638",
+    BG4  = "#1e2130",
+    FG   = "#cdd6f4",
+    FG2  = "#89b4fa",
+    FG3  = "#45475a",
+    CYAN   = "#89dceb",
+    GREEN  = "#3da84a",
+    AMBER  = "#c8960a",
+    RED    = "#f38ba8",
+    PURPLE = "#cba6f7",
+    BLUE   = "#89b4fa",
+    ORANGE = "#fab387",
+    STAGE_BG = {
+        "IF":  "#141e2e", "ID": "#131c30",
+        "OF":  "#1a1535", "EX": "#241535",
+        "MEM": "#2a1525", "WB": "#152514",
+    },
+    TOKEN_FG = "#11111b",
+    SEL_BG   = "#3d4577",
+    SCROLL_BG = "#222638",
+    SCROLL_TR = "#1a1d27",
+    ARROW_COL = "#585b70",
+    BUBBLE_COL= "#45475a",
+    FSM_ARROW = "#585b70",
+)
 
-FG   = "#cdd6f4"   # main text — soft lavender-white (easy to read)
-FG2  = "#89b4fa"   # secondary text — muted blue
-FG3  = "#45475a"   # disabled / very dim text
 
-CYAN   = "#89dceb"  # bright sky blue
-GREEN  = "#a6e3a1"  # soft mint green
-AMBER  = "#f9e2af"  # warm yellow
-RED    = "#f38ba8"  # soft rose red
-PURPLE = "#cba6f7"  # pastel purple (Mauve)
-BLUE   = "#89b4fa"  # periwinkle blue
-ORANGE = "#fab387"  # soft peach-orange
 
-STAGE_BG = {
-    "IF":  "#141e2e", "ID": "#131c30",
-    "OF":  "#1a1535", "EX": "#241535",
-    "MEM": "#2a1525", "WB": "#152514",
-}
-STAGE_ACCENT = {
-    "IF": CYAN, "ID": BLUE, "OF": PURPLE,
-    "EX": AMBER, "MEM": ORANGE, "WB": GREEN,
-}
-OP_COLOR = {
-    "MOV": BLUE,
-    "ADD": GREEN, "SUB": GREEN, "AND": GREEN,
-    "OR":  GREEN, "XOR": GREEN, "NEG": GREEN,
-    "LD":  ORANGE, "ST": "#fab387",
-    "JMP": RED,
-    "BEQ": PURPLE, "BNE": PURPLE, "BLT": PURPLE,
-    "BGT": PURPLE, "BLE": PURPLE, "BGE": PURPLE,
-}
+_CURRENT_THEME = "dark"
+
+def _apply_theme(name="dark"):
+    global _CURRENT_THEME
+    global BG, BG2, BG3, BG4, FG, FG2, FG3
+    global CYAN, GREEN, AMBER, RED, PURPLE, BLUE, ORANGE
+    global STAGE_BG, TOKEN_FG, SEL_BG, SCROLL_BG, SCROLL_TR
+    global ARROW_COL, BUBBLE_COL, FSM_ARROW
+    global STAGE_ACCENT, OP_COLOR
+    _CURRENT_THEME = "dark"
+    t = _DARK_THEME
+    BG   = t["BG"];  BG2  = t["BG2"];  BG3  = t["BG3"];  BG4  = t["BG4"]
+    FG   = t["FG"];  FG2  = t["FG2"];  FG3  = t["FG3"]
+    CYAN   = t["CYAN"];   GREEN  = t["GREEN"]; AMBER  = t["AMBER"]
+    RED    = t["RED"];    PURPLE = t["PURPLE"]; BLUE  = t["BLUE"]
+    ORANGE = t["ORANGE"]; STAGE_BG = t["STAGE_BG"]
+    TOKEN_FG  = t["TOKEN_FG"];  SEL_BG    = t["SEL_BG"]
+    SCROLL_BG = t["SCROLL_BG"]; SCROLL_TR = t["SCROLL_TR"]
+    ARROW_COL = t["ARROW_COL"]; BUBBLE_COL= t["BUBBLE_COL"]
+    FSM_ARROW = t["FSM_ARROW"]
+    STAGE_ACCENT = {
+        "IF": CYAN, "ID": BLUE, "OF": PURPLE,
+        "EX": AMBER, "MEM": ORANGE, "WB": GREEN,
+    }
+    OP_COLOR = {
+        "MOV": BLUE,
+        "ADD": GREEN, "SUB": GREEN, "AND": GREEN,
+        "OR":  GREEN, "XOR": GREEN, "NEG": GREEN,
+        "LD":  ORANGE, "ST": ORANGE,
+        "JMP": RED,
+        "BEQ": PURPLE, "BNE": PURPLE, "BLT": PURPLE,
+        "BGT": PURPLE, "BLE": PURPLE, "BGE": PURPLE,
+    }
+
+# Initialise dark theme globals
+_apply_theme("dark")
 
 # Font: JetBrains Mono is ideal; fall back to Consolas then Courier New
 _CODE_FONT = _CODE_FONT_TEMP
@@ -69,7 +101,7 @@ FM  = (_CODE_FONT, 10)
 FMB = (_CODE_FONT, 10, "bold")
 FMS = (_CODE_FONT,  9)
 FMT = (_CODE_FONT, 15, "bold")
-FLB = (_CODE_FONT,  8, "bold")
+FLB = (_CODE_FONT,  9, "bold")
 
 STAGES = ["IF", "ID", "OF", "EX", "MEM", "WB"]
 BRANCH_OPS = {"JMP","BEQ","BNE","BLT","BGT","BLE","BGE"}
@@ -206,19 +238,78 @@ def assemble(source_lines):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 2-BIT SMITH PREDICTOR
+# ─────────────────────────────────────────────────────────────────────────────
+# States: 0=Strongly Not Taken, 1=Weakly Not Taken,
+#         2=Weakly Taken,       3=Strongly Taken
+_SNT, _WNT, _WT, _ST = 0, 1, 2, 3
+_STATE_NAMES = {_SNT: "Strongly Not Taken", _WNT: "Weakly Not Taken",
+                _WT:  "Weakly Taken",        _ST:  "Strongly Taken"}
+_STATE_SHORT = {_SNT: "SNT", _WNT: "WNT", _WT: "WT", _ST: "ST"}
+
+class TwoBitPredictor:
+    """One 2-bit saturating counter per branch instruction index."""
+    def __init__(self):
+        # instruction-index -> state (0-3)
+        self._table: dict[int, int] = {}
+        # history: list of dicts for UI display
+        self.history: list[dict] = []
+
+    def _get(self, idx):
+        return self._table.get(idx, _WNT)  # default: Weakly Taken
+
+    def predict(self, instr) -> bool:
+        """Return True if we predict taken."""
+        state = self._get(instr.idx)
+        return state >= _WT
+
+    def update(self, instr, actually_taken: bool):
+        """Saturating counter update after branch is resolved."""
+        idx = instr.idx
+        old = self._get(idx)
+        if actually_taken:
+            new = min(old + 1, _ST)
+        else:
+            new = max(old - 1, _SNT)
+        self._table[idx] = new
+        correct = (old >= _WT) == actually_taken
+        self.history.append({
+            "instr":   instr.label(),
+            "idx":     idx,
+            "old":     old,
+            "new":     new,
+            "taken":   actually_taken,
+            "correct": correct,
+        })
+        return new, correct
+
+    def stats(self):
+        total   = len(self.history)
+        correct = sum(1 for h in self.history if h["correct"])
+        return total, correct
+
+    def reset(self):
+        self._table.clear()
+        self.history.clear()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 class Engine:
     def __init__(self, program):
-        self.program  = program
-        self.REG      = {f"R{i}": 0 for i in range(16)}
-        self.READY    = {f"R{i}": True for i in range(16)}
-        self.PRODUCER = {f"R{i}": None for i in range(16)}
-        self.MEM      = {}
-        self.pipe     = {s: None for s in STAGES}
-        self.pc       = 0
-        self.cycle    = 0
-        self.done     = False
+        self.program   = program
+        self.REG       = {f"R{i}": 0 for i in range(16)}
+        self.READY     = {f"R{i}": True for i in range(16)}
+        self.PRODUCER  = {f"R{i}": None for i in range(16)}
+        self.MEM       = {}
+        self.pipe      = {s: None for s in STAGES}
+        self.pc        = 0
+        self.cycle     = 0
+        self.done      = False
+        self.predictor = TwoBitPredictor()
+        # Always-current FSM state for persistent FSM glow (per branch in flight)
+        self._fsm_state: int = _WT   # default start state
 
     def _mread(self, a):
         a &= 0xFFFFFFFF
@@ -229,9 +320,12 @@ class Engine:
 
     def _forward_val(self, reg):
         """Return the most up-to-date value for reg, checking forward paths first.
-        Priority: EX result > MEM result > WB result > register file."""
+        Priority: EX result > MEM result > WB result > register file.
+        WB inclusion enables MEM->MEM forwarding: a LD whose result was
+        computed in MEM last cycle is now in WB and can feed the instruction
+        currently entering MEM (e.g. an ST needing the loaded value)."""
         p = self.pipe
-        for stage in ("EX", "MEM"):
+        for stage in ("EX", "MEM", "WB"):
             i = p[stage]
             if i and i.dest == reg and i.op not in BRANCH_OPS and i.op != "ST":
                 if i.result is not None:
@@ -278,6 +372,7 @@ class Engine:
         self.cycle += 1
         p = self.pipe
         events = []; stall_info = []; branch_flush = False; branch_target = None
+        pred_info = None   # dict with prediction details emitted this cycle
 
         # WB
         if p["WB"]:
@@ -298,7 +393,6 @@ class Engine:
         # EX — execute before shifts so _forward_val sees MEM/WB producers correctly
         if p["EX"]:
             ex = p["EX"]
-            # Detect and log forwarding paths before exec reads them
             fwd_srcs = [s for s in (ex.src1, ex.src2) if s and not self.READY.get(s, True)]
             self._exec(ex)
             for src in fwd_srcs:
@@ -308,9 +402,16 @@ class Engine:
                         events.append(("fwd", f"FWD {stage}->EX: {src} = {fwd.result}  ({fwd.label()} -> {ex.label()})"))
                         break
 
-        # MEM
+        # MEM — after EX so _forward_val can see the freshly computed EX result
+        # Also detect MEM->MEM forwarding: WB (previous MEM result) -> current MEM consumer
         if p["MEM"]:
             i = p["MEM"]
+            wb = p["WB"]
+            # Log MEM->MEM (WB->MEM) forwarding: producer just graduated from MEM
+            # into WB this cycle; consumer is the instruction now in MEM.
+            for src in (i.src1, i.src2, i.dest if i.op == "ST" else None):
+                if src and wb and wb.dest == src and wb.op not in BRANCH_OPS and wb.op != "ST" and wb.result is not None:
+                    events.append(("fwd", f"FWD MEM->MEM (WB->MEM): {src} = {wb.result}  ({wb.label()} -> {i.label()})"))
             if i.op == "LD":
                 i.result = self._mread(i.addr)
                 events.append(("mem", f"LD  [{i.addr}] -> {i.result}"))
@@ -321,31 +422,99 @@ class Engine:
         p["WB"]  = p["MEM"]
         p["MEM"] = p["EX"]
 
-        # Branch resolution
-        if p["EX"] and p["EX"].op in BRANCH_OPS and p["EX"].branch_taken:
-            bi  = p["EX"]
-            tgt = bi.idx + bi.imm
-            if 0 <= tgt < len(self.program):
-                self.pc = tgt
-                branch_flush = True
-                branch_target = tgt
-                p["IF"] = p["ID"] = p["OF"] = None
-                events.append(("branch", f"Branch taken -> I{tgt}  (flushed IF/ID/OF)"))
+        # ── Branch resolution + predictor update ──────────────────────────
+        mispredicted = False
+        if p["EX"] and p["EX"].op in BRANCH_OPS:
+            bi           = p["EX"]
+            actually_taken = bi.branch_taken
+            tgt          = bi.idx + bi.imm
+            old_state    = self.predictor._get(bi.idx)
+            predicted_taken = old_state >= _WT
+            new_state, correct = self.predictor.update(bi, actually_taken)
+
+            self._fsm_state = new_state   # update persistent glow after resolution
+            pred_info = {
+                "instr":          bi.label(),
+                "predicted_taken": predicted_taken,
+                "actually_taken":  actually_taken,
+                "correct":        correct,
+                "old_state":      old_state,
+                "new_state":      new_state,
+                "old_name":       _STATE_SHORT[old_state],
+                "new_name":       _STATE_SHORT[new_state],
+            }
+
+            if actually_taken and 0 <= tgt < len(self.program):
+                if not predicted_taken:
+                    # Mispredicted: we fetched the fall-through path — flush and redirect
+                    self.pc = tgt
+                    branch_flush = True
+                    branch_target = tgt
+                    mispredicted = True
+                    p["IF"] = p["ID"] = p["OF"] = None
+                    events.append(("branch",
+                        f"Branch TAKEN (MISPREDICTED) -> I{tgt}  "
+                        f"[predictor: {_STATE_SHORT[old_state]} -> {_STATE_SHORT[new_state]}]  "
+                        f"(flushed IF/ID/OF)"))
+                else:
+                    # Correct prediction: speculative fetch already followed the right path
+                    branch_target = tgt
+                    events.append(("branch",
+                        f"Branch TAKEN (correct prediction) -> I{tgt}  "
+                        f"[predictor: {_STATE_SHORT[old_state]} -> {_STATE_SHORT[new_state]}]"))
+            elif not actually_taken:
+                if predicted_taken:
+                    mispredicted = True
+                    correct_pc = bi.idx + 1   # fall-through: instruction after the branch
+                    self.pc = correct_pc       # fix PC — speculative fetch sent it to loop target
+                    events.append(("branch",
+                        f"Branch NOT TAKEN (MISPREDICTED)  "
+                        f"[predictor: {_STATE_SHORT[old_state]} -> {_STATE_SHORT[new_state]}]  "
+                        f"(flushed IF/ID/OF)"))
+                    p["IF"] = p["ID"] = p["OF"] = None
+                    branch_flush = True        # flush speculatively fetched wrong-path
+                    branch_target = correct_pc
+                else:
+                    events.append(("branch",
+                        f"Branch NOT TAKEN (correct prediction)  "
+                        f"[predictor: {_STATE_SHORT[old_state]} -> {_STATE_SHORT[new_state]}]"))
             else:
                 events.append(("warn", f"Branch target {tgt} out of range"))
 
+        if_pred_event = None   # set below if a branch is fetched this cycle
+
         def fetch():
+            nonlocal if_pred_event
             if self.pc < len(self.program):
-                # Clone so each pipeline pass of the same instruction
-                # gets a unique _uid — required for correct token display
-                # when a branch/loop re-fetches an already-in-flight instruction.
-                p["IF"] = self.program[self.pc].clone()
-                self.pc += 1
+                instr = self.program[self.pc].clone()
+                # Speculative fetch: if next instruction is a branch, peek at prediction
+                if instr.op in BRANCH_OPS:
+                    pred_taken = self.predictor.predict(instr)
+                    cur_state  = self.predictor._get(instr.idx)
+                    if_pred_event = {
+                        "idx":       instr.idx,
+                        "instr":     instr.label(),
+                        "predicted_taken": pred_taken,
+                        "state":     cur_state,
+                        "state_name": _STATE_SHORT[cur_state],
+                    }
+                    self._fsm_state = cur_state   # glow this state from IF onwards
+                    if pred_taken:
+                        tgt = instr.idx + instr.imm
+                        if 0 <= tgt < len(self.program):
+                            # Speculate: advance PC to predicted target
+                            self.pc = tgt
+                        else:
+                            self.pc += 1
+                    else:
+                        self.pc += 1
+                else:
+                    self.pc += 1
+                p["IF"] = instr
             else:
                 p["IF"] = None
 
         def mark_dest_in_flight(instr):
-            """Reserve dest register when instruction clears ID and enters OF."""
             if instr and instr.dest and instr.op not in BRANCH_OPS:
                 self.READY[instr.dest] = False
                 self.PRODUCER[instr.dest] = instr
@@ -353,13 +522,14 @@ class Engine:
         if stall:
             p["EX"] = p["OF"]
             p["OF"] = None
-            # p["ID"] stays, p["IF"] stays — no new fetch, no new reservation
         elif branch_flush:
-            p["EX"] = None
+            # EX holds the resolving branch — let it advance to MEM normally.
+            # IF/ID/OF were already cleared above; fetch the correct next instruction.
+            p["EX"] = p["OF"]  # OF was already cleared to None above
             fetch()
         else:
             p["EX"] = p["OF"]
-            entering_of = p["ID"]   # instruction graduating past the hazard gate
+            entering_of = p["ID"]
             p["OF"] = p["ID"]
             mark_dest_in_flight(entering_of)
             p["ID"] = p["IF"]
@@ -370,6 +540,8 @@ class Engine:
 
         return dict(
             cycle=self.cycle,
+            fsm_state=self._fsm_state,
+            if_pred_event=if_pred_event,
             pipe={s: p[s] for s in STAGES},
             regs=dict(self.REG),
             mem=dict(self.MEM),
@@ -377,6 +549,11 @@ class Engine:
             stall_info=stall_info,
             branch_flush=branch_flush,
             branch_target=branch_target,
+            mispredicted=mispredicted,
+            pred_info=pred_info,
+            predictor_history=list(self.predictor.history),
+            predictor_stats=self.predictor.stats(),
+            predictor_table=dict(self.predictor._table),
             events=events,
             done=self.done,
         )
@@ -405,7 +582,7 @@ class Token:
             fill=color, outline="#ffffff", width=1, tags="tok")
         self.text_id = canvas.create_text(
             x + w/2, y + h/2,
-            text=text, fill="#11111b",
+            text=text, fill=TOKEN_FG,
             font=("JetBrains Mono", 9, "bold"),
             width=w - 12, tags="tok")
 
@@ -482,6 +659,7 @@ class App(tk.Tk):
         self._stage_rects: dict = {}
 
         self._prev_regs = {f"R{i}": 0 for i in range(16)}
+        self._pred_hist_len = 0   # how many resolved-branch rows we've printed
 
         self._build()
 
@@ -489,13 +667,11 @@ class App(tk.Tk):
     # UI BUILD
     # ══════════════════════════════════════════════════════════════════════════
     def _build(self):
-        # ── Fixed top bar (always visible, never scrolls) ──────────────────
-        top = tk.Frame(self, bg=BG, pady=5)
+        # ── Fixed top bar — minimal, blends with background ───────────────
+        top = tk.Frame(self, bg=BG, pady=4)
         top.pack(fill="x", padx=12)
-        tk.Label(top, text="◈  SCALAR-6  PIPELINE  VISUALIZER",
-                 font=FMT, fg=CYAN, bg=BG).pack(side="left")
         self.cycle_lbl = tk.Label(top, text="CYCLE  —",
-                                   font=(_CODE_FONT, 13, "bold"), fg=FG2, bg=BG)
+                                   font=(_CODE_FONT, 12, "bold"), fg=FG2, bg=BG)
         self.cycle_lbl.pack(side="right", padx=8)
 
         # ── Scrollable viewport ────────────────────────────────────────────
@@ -539,7 +715,7 @@ class App(tk.Tk):
 
         # ── Build the three columns inside _inner ──────────────────────────
         self._inner.columnconfigure(0, minsize=240, weight=1)
-        self._inner.columnconfigure(1, weight=4)
+        self._inner.columnconfigure(1, weight=2)
         self._inner.columnconfigure(2, minsize=220, weight=1)
         self._inner.rowconfigure(0, weight=1)
 
@@ -633,14 +809,26 @@ class App(tk.Tk):
         p.rowconfigure(1, weight=1)
         p.columnconfigure(0, weight=1)
 
-        # Samples panel
+        # Samples panel — clean listbox selector
         sf = self._section(p, "EXAMPLES", row=0)
+        lb_frame = tk.Frame(sf, bg=BG3, bd=1, relief="flat")
+        lb_frame.pack(fill="x", pady=(0, 4))
+        self._sample_lb = tk.Listbox(lb_frame,
+                                     font=FMS, bg=BG3, fg=FG2,
+                                     selectbackground=BG2, selectforeground=CYAN,
+                                     activestyle="none", relief="flat", bd=0,
+                                     highlightthickness=0, cursor="hand2",
+                                     height=len(SAMPLES), exportselection=False)
         for name in SAMPLES:
-            tk.Button(sf, text=name, font=("JetBrains Mono",8),
-                      bg=BG3, fg=FG2, activebackground=BG2, activeforeground=CYAN,
-                      relief="flat", bd=0, cursor="hand2", pady=4,
-                      command=lambda n=name: self._load_sample(n)
-                      ).pack(fill="x", pady=1)
+            self._sample_lb.insert("end", "  " + name)
+        self._sample_lb.select_set(0)
+        self._sample_lb.pack(fill="x")
+        self._sample_lb.bind("<Double-Button-1>", lambda e: self._load_selected_sample())
+        tk.Button(sf, text="▶  Load Selected", font=FMS,
+                  bg=BG2, fg=CYAN, activebackground=BG3, activeforeground=CYAN,
+                  relief="flat", bd=0, cursor="hand2", pady=4,
+                  command=self._load_selected_sample
+                  ).pack(fill="x", pady=(3, 0))
 
         # Editor
         ef = self._section(p, "PROGRAM EDITOR", row=1, expand=True)
@@ -651,16 +839,29 @@ class App(tk.Tk):
         self.editor.pack(fill="both", expand=True)
         self.editor.insert("1.0", SAMPLES["Arithmetic"])
 
-        # Syntax ref
-        rf = self._section(p, "SYNTAX", row=2)
-        tk.Label(rf, text=(
-            "MOV Rd,#imm\n"
-            "ADD/SUB/AND/OR/XOR Rd,Ra,Rb\n"
-            "NEG Rd,Rs\n"
-            "LD Rd,[Rs+off]   ST Rs,[Rd+off]\n"
-            "JMP ±off\n"
-            "BEQ/BNE/BLT/BGT/BLE/BGE Ra,Rb,±off"
-        ), font=("JetBrains Mono",8), fg="#6c7086", bg=BG2, justify="left").pack(anchor="w")
+        # Syntax ref — redesigned as a clean table
+        rf = self._section(p, "SYNTAX REFERENCE", row=2)
+        syntax_rows = [
+            ("MOV",  "Rd, #imm",        "Load immediate"),
+            ("ADD",  "Rd, Ra, Rb",       "Addition"),
+            ("SUB",  "Rd, Ra, Rb",       "Subtraction"),
+            ("AND/OR/XOR", "Rd, Ra, Rb", "Bitwise ops"),
+            ("NEG",  "Rd, Rs",           "Negate"),
+            ("LD",   "Rd, [Rs+off]",     "Memory load"),
+            ("ST",   "Rs, [Rd+off]",     "Memory store"),
+            ("JMP",  "±offset",          "Unconditional jump"),
+            ("BEQ/BNE", "Ra, Rb, ±off", "Branch equal/not"),
+            ("BLT/BGT", "Ra, Rb, ±off", "Branch less/greater"),
+        ]
+        for op, operands, desc in syntax_rows:
+            row_f = tk.Frame(rf, bg=BG2)
+            row_f.pack(fill="x", pady=1)
+            tk.Label(row_f, text=op, font=(_CODE_FONT, 9, "bold"),
+                     fg=CYAN, bg=BG2, width=12, anchor="w").pack(side="left")
+            tk.Label(row_f, text=operands, font=(_CODE_FONT, 9),
+                     fg=FG2, bg=BG2, width=14, anchor="w").pack(side="left")
+            tk.Label(row_f, text=desc, font=(_CODE_FONT, 9),
+                     fg=FG3, bg=BG2, anchor="w").pack(side="left")
 
         # Buttons
         bp = tk.Frame(p, bg=BG)
@@ -718,7 +919,7 @@ class App(tk.Tk):
         self.status_lbl = tk.Label(hdr, text="", font=FLB, fg=FG2, bg=BG3)
         self.status_lbl.pack(side="right")
 
-        self.canvas = tk.Canvas(p, bg=BG2, highlightthickness=0, height=260)
+        self.canvas = tk.Canvas(p, bg=BG2, highlightthickness=0, height=760)
         self.canvas.grid(row=1, column=0, sticky="nsew")
         self.canvas.bind("<Configure>", self._on_resize)
 
@@ -787,6 +988,67 @@ class App(tk.Tk):
                                 font=(_CODE_FONT, 14, "bold"), fg=CYAN, bg=BG3)
         self.pc_lbl.pack(side="right")
 
+        # ── 2-Bit Smith Branch Predictor panel ─────────────────────────────
+        bpf = tk.Frame(p, bg=BG2)
+        bpf.grid(row=4, column=0, sticky="nsew", pady=(4, 0))
+        p.rowconfigure(4, weight=1)
+
+        tk.Label(bpf, text="2-BIT BRANCH PREDICTOR", font=FLB, fg=PURPLE, bg=BG3,
+                 padx=8, pady=5).pack(fill="x")
+
+        # Stats bar
+        stats_bar = tk.Frame(bpf, bg=BG3, padx=6, pady=4)
+        stats_bar.pack(fill="x")
+        tk.Label(stats_bar, text="Predictions:", font=FMS, fg=FG2, bg=BG3).pack(side="left")
+        self.pred_total_lbl = tk.Label(stats_bar, text="0", font=FMB, fg=CYAN, bg=BG3, width=4)
+        self.pred_total_lbl.pack(side="left", padx=(2, 8))
+        tk.Label(stats_bar, text="Correct:", font=FMS, fg=FG2, bg=BG3).pack(side="left")
+        self.pred_correct_lbl = tk.Label(stats_bar, text="0", font=FMB, fg=GREEN, bg=BG3, width=4)
+        self.pred_correct_lbl.pack(side="left", padx=(2, 8))
+        tk.Label(stats_bar, text="Accuracy:", font=FMS, fg=FG2, bg=BG3).pack(side="left")
+        self.pred_acc_lbl = tk.Label(stats_bar, text="--", font=FMB, fg=AMBER, bg=BG3, width=6)
+        self.pred_acc_lbl.pack(side="left")
+
+        # FSM state diagram (canvas)
+        fsm_frame = tk.Frame(bpf, bg=BG2, pady=4)
+        fsm_frame.pack(fill="x")
+        self.fsm_canvas = tk.Canvas(fsm_frame, bg=BG2, height=90,
+                                     highlightthickness=0)
+        self.fsm_canvas.pack(fill="x", padx=6)
+        self.fsm_canvas.bind("<Configure>", self._draw_fsm)
+
+        # Last prediction detail
+        pred_lbl_frame = tk.Frame(bpf, bg=BG2, padx=6, pady=2)
+        pred_lbl_frame.pack(fill="x")
+        tk.Label(pred_lbl_frame, text="Last branch:", font=FMS, fg=FG3, bg=BG2).pack(anchor="w")
+        self.pred_last_lbl = tk.Label(pred_lbl_frame, text="(none yet)",
+                                       font=FMS, fg=FG2, bg=BG2, justify="left", anchor="w",
+                                       wraplength=200)
+        self.pred_last_lbl.pack(fill="x")
+
+        # History log
+        tk.Label(bpf, text="PREDICTION HISTORY", font=FLB, fg=PURPLE, bg=BG3,
+                 padx=8, pady=3).pack(fill="x")
+        hist_wrap = tk.Frame(bpf, bg=BG2)
+        hist_wrap.pack(fill="both", expand=True)
+        self.pred_hist = tk.Text(hist_wrap, bg=BG4, fg=FG2, font=FMS, bd=0,
+                                  padx=6, pady=4, height=5, state="disabled",
+                                  relief="flat", wrap="none")
+        pred_sb = tk.Scrollbar(hist_wrap, command=self.pred_hist.yview,
+                                bg=BG3, troughcolor=BG2, activebackground=BG3)
+        self.pred_hist.config(yscrollcommand=pred_sb.set)
+        self.pred_hist.pack(side="left", fill="both", expand=True)
+        pred_sb.pack(side="right", fill="y")
+        self.pred_hist.tag_config("correct",   foreground=GREEN)
+        self.pred_hist.tag_config("wrong",     foreground=RED)
+        self.pred_hist.tag_config("predict",   foreground=CYAN)
+        self.pred_hist.tag_config("header",    foreground=PURPLE)
+
+        self.pred_table_lbl = tk.Label(bpf, text="(no branches seen)",  # hidden, kept for compat
+                                        font=FMS, fg=FG2, bg=BG2,
+                                        justify="left", anchor="w", padx=6, pady=0)
+        # counter table intentionally not packed (removed from UI)
+
     # ══════════════════════════════════════════════════════════════════════════
     # CANVAS / STAGE DRAWING
     # ══════════════════════════════════════════════════════════════════════════
@@ -808,37 +1070,51 @@ class App(tk.Tk):
         W = c.winfo_width(); H = c.winfo_height()
         if W < 20 or H < 20: return
 
-        n   = len(STAGES)
-        PX  = 12; PY = 44; GAP = 6
-        sw  = (W - 2*PX - GAP*(n-1)) / n
-        sh  = min(H - PY - 10, 180)
-        sy  = PY + 18
+        n      = len(STAGES)
+        PX     = 20
+        PY     = 10
+        GAP    = 10
+        HDR    = 26          # height of the stage-name header stripe inside each box
+        sh     = 110         # fixed card height (taller = more square relative to width)
+        # Cap width so stages don't become ultra-wide rectangles
+        sw     = min(max(W - 2*PX, 80), W - 2*PX)
+        # Centre the stages horizontally if canvas is very wide
+        target_w = min(sw, int(sh * 3.5))  # max ~3.5:1 aspect ratio
+        sx     = PX + max(0, (sw - target_w) // 2)
+        sw     = target_w
+
         self._stage_rects.clear()
 
+        total_h = PY + n * sh + (n - 1) * GAP
+        offset_y = max(0, (H - total_h) // 2)
+
         for i, s in enumerate(STAGES):
-            x0 = PX + i*(sw+GAP); x1 = x0+sw
-            y0 = sy; y1 = sy+sh
+            y0 = offset_y + PY + i * (sh + GAP)
+            y1 = y0 + sh
+            x0 = sx
+            x1 = sx + sw
             acc = STAGE_ACCENT[s]
+            bg  = STAGE_BG[s]
 
-            # shadow
-            c.create_rectangle(x0+3, y0+3, x1+3, y1+3,
-                                fill="#000000", outline="", tags="stage")
-            # body
+            # subtle drop-shadow
+            c.create_rectangle(x0+4, y0+4, x1+4, y1+4,
+                                fill="#0a0a0f", outline="", tags="stage")
+            # card body
             c.create_rectangle(x0, y0, x1, y1,
-                                fill=STAGE_BG[s], outline=acc, width=2, tags="stage")
-            # accent stripe
-            c.create_rectangle(x0+2, y0+2, x1-2, y0+7,
+                                fill=bg, outline=acc, width=2, tags="stage")
+            # top header stripe with stage name inside
+            c.create_rectangle(x0+2, y0+2, x1-2, y0+HDR,
                                 fill=acc, outline="", tags="stage")
-            # label above
-            c.create_text((x0+x1)/2, y0-15, text=s,
-                           font=("JetBrains Mono",11,"bold"), fill=acc, tags="stage")
+            c.create_text((x0+x1)/2, y0 + HDR/2 + 1,
+                          text=s, font=(_CODE_FONT, 11, "bold"),
+                          fill=TOKEN_FG, tags="stage")
 
-            # arrow
-            if i < n-1:
-                ay = (y0+y1)/2
-                c.create_line(x1+1, ay, x1+GAP-1, ay,
-                               fill="#585b70", width=2,
-                               arrow="last", arrowshape=(7,9,4), tags="stage")
+            # downward arrow between stages
+            if i < n - 1:
+                ax = (x0 + x1) / 2
+                c.create_line(ax, y1+2, ax, y1+GAP-2,
+                               fill=ARROW_COL, width=2,
+                               arrow="last", arrowshape=(7, 9, 4), tags="stage")
 
             self._stage_rects[s] = (x0, y0, x1, y1)
 
@@ -849,21 +1125,27 @@ class App(tk.Tk):
         for stage, uid in self._stage_uid.items():
             if uid is None and stage in self._stage_rects:
                 tx, ty, tw, th = self._token_geom(stage)
+                # Make bubble square: use the smaller dimension
+                sq = min(tw, th)
+                bx = tx + (tw - sq) / 2
+                by = ty + (th - sq) / 2
                 self.canvas.create_rectangle(
-                    tx, ty, tx+tw, ty+th,
-                    fill="", outline="#45475a", dash=(4,5), width=1, tags="bubble")
+                    bx, by, bx+sq, by+sq,
+                    fill="", outline=BUBBLE_COL, dash=(4, 5), width=1, tags="bubble")
                 self.canvas.create_text(
-                    tx+tw/2, ty+th/2, text="bubble",
-                    font=("JetBrains Mono",8), fill="#45475a", tags="bubble")
+                    bx+sq/2, by+sq/2, text="bubble",
+                    font=(_CODE_FONT, 8), fill=BUBBLE_COL, tags="bubble")
 
     def _token_geom(self, stage):
-        """Return (x, y, w, h) for a token inside stage."""
+        """Return (x, y, w, h) for a token inside stage — below the header stripe."""
         x0, y0, x1, y1 = self._stage_rects[stage]
-        pad = 10
-        tw = x1 - x0 - pad*2
-        th = min(52, y1 - y0 - pad*2)
-        tx = x0 + pad
-        ty = y0 + (y1-y0-th)/2
+        HDR    = 26
+        pad_x  = 10
+        pad_y  = 8
+        tx  = x0 + pad_x
+        ty  = y0 + HDR + pad_y
+        tw  = (x1 - x0) - pad_x * 2
+        th  = (y1 - y0) - HDR - pad_y * 2
         return tx, ty, tw, th
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -954,11 +1236,17 @@ class App(tk.Tk):
         self.canvas.delete("bubble")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # CONTROLS
+    # LOAD / STEP / AUTO / RESET
     # ══════════════════════════════════════════════════════════════════════════
     def _load_sample(self, name):
         self.editor.delete("1.0","end")
         self.editor.insert("1.0", SAMPLES[name])
+
+    def _load_selected_sample(self):
+        sel = self._sample_lb.curselection()
+        if sel:
+            name = list(SAMPLES.keys())[sel[0]]
+            self._load_sample(name)
 
     def _do_load(self):
         self._do_reset()
@@ -1026,6 +1314,17 @@ class App(tk.Tk):
         self.hazard_lbl.config(text="--  clear", fg=GREEN)
         self._update_regs({f"R{i}": 0 for i in range(16)})
         self._update_mem({})
+        # Clear predictor panel
+        self.pred_total_lbl.config(text="0")
+        self.pred_correct_lbl.config(text="0")
+        self.pred_acc_lbl.config(text="--", fg=AMBER)
+        self.pred_last_lbl.config(text="(none yet)", fg=FG2)
+        self.pred_table_lbl.config(text="(no branches seen)")
+        self._pred_hist_len = 0
+        self.pred_hist.config(state="normal")
+        self.pred_hist.delete("1.0","end")
+        self.pred_hist.config(state="disabled")
+        self._draw_fsm()
         self.log.config(state="normal")
         self.log.delete("1.0","end")
         self.log.config(state="disabled")
@@ -1062,13 +1361,23 @@ class App(tk.Tk):
         elif fwd_events:
             self.hazard_lbl.config(text="FORWARDING\n" + "\n".join(f"  {m}" for m in fwd_events), fg=BLUE)
         elif state["branch_flush"]:
-            self.hazard_lbl.config(
-                text=f"BRANCH TAKEN\n  -> I{state['branch_target']}", fg=PURPLE)
+            mp = state.get("mispredicted", False)
+            pi = state.get("pred_info")
+            if mp and pi:
+                self.hazard_lbl.config(
+                    text=f"BRANCH MISPREDICTED\n"
+                         f"  {pi['instr']}\n"
+                         f"  {pi['old_name']} -> {pi['new_name']}\n"
+                         f"  -> I{state['branch_target']}", fg=RED)
+            else:
+                self.hazard_lbl.config(
+                    text=f"BRANCH TAKEN\n  -> I{state['branch_target']}", fg=PURPLE)
         else:
             self.hazard_lbl.config(text="--  clear", fg=GREEN)
 
         self._update_regs(state["regs"])
         self._update_mem(state["mem"])
+        self._update_predictor_ui(state)
 
         self._log(f"-- Cycle {cyc} --", "cycle")
         for kind, msg in state["events"]:
@@ -1082,7 +1391,8 @@ class App(tk.Tk):
             val = regs.get(rn, 0)
             lbl.config(text=str(val))
             if val != self._prev_regs.get(rn, 0):
-                lbl.config(fg=GREEN, bg="#1e3a1e")
+                flash_bg = "#1e3a1e"
+                lbl.config(fg=GREEN, bg=flash_bg)
                 self.after(500, lambda l=lbl: l.config(fg=FG, bg=BG4))
         self._prev_regs = dict(regs)
 
@@ -1095,6 +1405,136 @@ class App(tk.Tk):
         else:
             self.mem_text.insert("end","  (empty)")
         self.mem_text.config(state="disabled")
+
+    def _draw_fsm(self, event=None, active_state=None):
+        """Draw the 2-bit FSM state diagram on self.fsm_canvas."""
+        c = self.fsm_canvas
+        c.delete("all")
+        W = c.winfo_width()
+        H = c.winfo_height()
+        if W < 30 or H < 30:
+            return
+
+        # 4 states arranged left to right: SNT  WNT  WT  ST
+        labels   = ["SNT", "WNT", "WT", "ST"]
+        full_labels = ["Strongly\nNot Taken", "Weakly\nNot Taken", "Weakly\nTaken", "Strongly\nTaken"]
+        colors_normal = [RED, "#c45070", "#7aaf7a", GREEN]
+        r = min(16, H // 3)
+        margin = r + 4
+        spacing = (W - 2 * margin) / 3
+
+        centers = [(int(margin + i * spacing), H // 2) for i in range(4)]
+
+        # Draw arrows between states
+        arrow_opts = dict(fill=FSM_ARROW, width=1, arrow="last", arrowshape=(6, 8, 3))
+        for i in range(3):
+            cx1, cy1 = centers[i]
+            cx2, cy2 = centers[i+1]
+            # Not-taken arrow (goes left, above)
+            c.create_line(cx2 - r, cy2 - 4, cx1 + r, cy1 - 4,
+                          **arrow_opts)
+            # Taken arrow (goes right, below)
+            c.create_line(cx1 + r, cy1 + 4, cx2 - r, cy2 + 4,
+                          **arrow_opts)
+
+        # Self-loops at ends
+        c.create_arc(centers[0][0] - r - 10, centers[0][1] - r,
+                     centers[0][0] - r + 2, centers[0][1] + r,
+                     start=90, extent=180, style="arc",
+                     outline=FSM_ARROW, width=1)
+        c.create_arc(centers[3][0] + r - 2, centers[3][1] - r,
+                     centers[3][0] + r + 10, centers[3][1] + r,
+                     start=270, extent=180, style="arc",
+                     outline=FSM_ARROW, width=1)
+
+        # Draw state circles
+        for i, (cx, cy) in enumerate(centers):
+            is_active = (i == active_state)
+            fill  = colors_normal[i] if is_active else BG3
+            out   = colors_normal[i]
+            width = 3 if is_active else 1
+            c.create_oval(cx - r, cy - r, cx + r, cy + r,
+                          fill=fill, outline=out, width=width)
+            c.create_text(cx, cy,
+                          text=labels[i],
+                          font=(_CODE_FONT, 7, "bold"),
+                          fill=TOKEN_FG if is_active else out)
+
+        # Taken / Not-taken labels on arrows
+        if W > 200:
+            mid = centers[1][0]
+            c.create_text(mid, H // 2 - r - 6,  text="Not taken →",
+                          font=(_CODE_FONT, 7), fill=FSM_ARROW)
+            c.create_text(mid, H // 2 + r + 6,  text="← Taken",
+                          font=(_CODE_FONT, 7), fill=FSM_ARROW)
+
+    def _update_predictor_ui(self, state):
+        """Refresh all predictor widgets from the latest engine state."""
+        total, correct = state.get("predictor_stats", (0, 0))
+        self.pred_total_lbl.config(text=str(total))
+        self.pred_correct_lbl.config(text=str(correct))
+        if total > 0:
+            acc = 100 * correct / total
+            self.pred_acc_lbl.config(text=f"{acc:.0f}%",
+                                      fg=GREEN if acc >= 60 else RED)
+        else:
+            self.pred_acc_lbl.config(text="--", fg=AMBER)
+
+        # FSM diagram — always glow the current persistent state
+        active_state = state.get("fsm_state")   # set every cycle by engine
+        self._draw_fsm(active_state=active_state)
+
+        # Update last-prediction label only when a branch resolves in EX
+        pred_info = state.get("pred_info")
+        if pred_info:
+            outcome  = "✓ CORRECT" if pred_info["correct"] else "✗ WRONG"
+            pred_str = "TAKEN" if pred_info["predicted_taken"] else "NOT TAKEN"
+            act_str  = "TAKEN" if pred_info["actually_taken"]  else "NOT TAKEN"
+            col = GREEN if pred_info["correct"] else RED
+            self.pred_last_lbl.config(
+                text=f"{pred_info['instr']}\n"
+                     f"  Predicted: {pred_str}  Actual: {act_str}\n"
+                     f"  State: {pred_info['old_name']} → {pred_info['new_name']}  {outcome}",
+                fg=col)
+
+        # History log — two rows per branch: IF prediction + EX resolution
+        # IF-stage row: printed when a branch is fetched
+        if_ev = state.get("if_pred_event")
+        if if_ev:
+            pred_str = "T" if if_ev["predicted_taken"] else "N"
+            line = (f"→ I{if_ev['idx']} {if_ev['instr'][:16]:16s}  "
+                    f"pred:{pred_str}  [{if_ev['state_name']}] (IF)\n")
+            self.pred_hist.config(state="normal")
+            self.pred_hist.insert("end", line, "predict")
+            self.pred_hist.see("end")
+            self.pred_hist.config(state="disabled")
+
+        # EX-resolution row: printed only when a new entry appears in history
+        history = state.get("predictor_history", [])
+        new_len = len(history)
+        if new_len > self._pred_hist_len:
+            for entry in history[self._pred_hist_len:]:
+                tag = "correct" if entry["correct"] else "wrong"
+                sym = "✓" if entry["correct"] else "✗"
+                act = "T" if entry["taken"] else "N"
+                line = (f"{sym} I{entry['idx']} {entry['instr'][:16]:16s}  "
+                        f"act:{act}  {_STATE_SHORT[entry['old']]}→{_STATE_SHORT[entry['new']]} (EX)\n")
+                self.pred_hist.config(state="normal")
+                self.pred_hist.insert("end", line, tag)
+                self.pred_hist.see("end")
+                self.pred_hist.config(state="disabled")
+            self._pred_hist_len = new_len
+
+        # Counter table
+        table = state.get("predictor_table", {})
+        if table:
+            lines = []
+            for idx in sorted(table):
+                s = table[idx]
+                lines.append(f"  I{idx}: {_STATE_SHORT[s]} ({s})")
+            self.pred_table_lbl.config(text="\n".join(lines))
+        else:
+            self.pred_table_lbl.config(text="(no branches seen)")
 
     def _log(self, msg, tag=""):
         self.log.config(state="normal")
