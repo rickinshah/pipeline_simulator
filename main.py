@@ -830,14 +830,55 @@ class App(tk.Tk):
                   command=self._load_selected_sample
                   ).pack(fill="x", pady=(3, 0))
 
-        # Editor
+        # Editor — gutter + syntax-highlighted text area
         ef = self._section(p, "PROGRAM EDITOR", row=1, expand=True)
-        self.editor = tk.Text(ef, bg=BG4, fg=FG, insertbackground=CYAN,
-                               font=FM, bd=0, padx=8, pady=8,
-                               selectbackground="#3d4577", selectforeground=FG,
-                               undo=True, relief="flat")
-        self.editor.pack(fill="both", expand=True)
+        ed_frame = tk.Frame(ef, bg=BG4)
+        ed_frame.pack(fill="both", expand=True)
+
+        # ── Line-number gutter ──────────────────────────────────────────────
+        self._gutter = tk.Text(
+            ed_frame, bg="#161922", fg="#4a5070",
+            font=FM, bd=0, padx=6, pady=8,
+            width=3, state="disabled", relief="flat",
+            selectbackground="#161922", selectforeground="#4a5070",
+            cursor="arrow", takefocus=False,
+            highlightthickness=0,
+        )
+        self._gutter.pack(side="left", fill="y")
+
+        # thin separator line
+        tk.Frame(ed_frame, bg="#2a2d3e", width=1).pack(side="left", fill="y")
+
+        # ── Editor ─────────────────────────────────────────────────────────
+        ed_scroll = tk.Scrollbar(ed_frame, orient="vertical", bg=BG3,
+                                  troughcolor=BG2, activebackground=BG3)
+        ed_scroll.pack(side="right", fill="y")
+        self.editor = tk.Text(
+            ed_frame, bg=BG4, fg=FG, insertbackground=CYAN,
+            font=FM, bd=0, padx=8, pady=8,
+            selectbackground="#3d4577", selectforeground=FG,
+            undo=True, relief="flat",
+            yscrollcommand=self._on_editor_scroll,
+            highlightthickness=0,
+        )
+        ed_scroll.config(command=self._sync_editor_scroll)
+        self.editor.pack(side="left", fill="both", expand=True)
+
+        # ── Syntax tag definitions ──────────────────────────────────────────
+        self.editor.tag_config("op",      foreground=AMBER)
+        self.editor.tag_config("branch",  foreground=RED)
+        self.editor.tag_config("reg",     foreground="#89b4fa")   # blue
+        self.editor.tag_config("imm",     foreground="#a6e3a1")   # green
+        self.editor.tag_config("mem",     foreground=ORANGE)
+        self.editor.tag_config("label_def", foreground=PURPLE)
+        self.editor.tag_config("comment",   foreground="#45475a")
+        self.editor.tag_config("current_line", background="#1e2235")
+
+        self.editor.bind("<KeyRelease>",   self._on_editor_key)
+        self.editor.bind("<ButtonRelease>", self._on_editor_key)
         self.editor.insert("1.0", SAMPLES["Arithmetic"])
+        self._highlight_syntax()
+        self._update_gutter()
 
         # Syntax ref — redesigned as a clean table
         rf = self._section(p, "SYNTAX REFERENCE", row=2)
@@ -1136,6 +1177,79 @@ class App(tk.Tk):
                     bx+sq/2, by+sq/2, text="bubble",
                     font=(_CODE_FONT, 8), fill=BUBBLE_COL, tags="bubble")
 
+    def _draw_forwarding_arrows(self, fwd_pairs):
+        """Orthogonal forwarding arrows: bottom-of-src → down → left → up → top-of-dst.
+
+        Route (5 waypoints, 4 right-angle segments):
+          P0  bottom-left of source  (exit point)
+          P1  go DOWN  DROP pixels below P0
+          P2  go LEFT  to the routing rail
+          P3  go UP    to top-body level of destination
+          P4  go RIGHT into destination (arrow tip)
+        """
+        c = self.canvas
+        c.delete("fwd_arrow")
+        if not fwd_pairs or not self._stage_rects:
+            return
+
+        FWD_COL  = "#f0a500"   # warm gold — distinct & vivid
+        GLOW_MID = "#5a3a00"
+        GLOW_OUT = "#1a0f00"
+        HDR      = 26    # header stripe height — must match _redraw_stages
+        DROP     = 14    # px to drop below the source card before turning
+
+        seen, unique = set(), []
+        for pair in fwd_pairs:
+            if pair not in seen:
+                seen.add(pair); unique.append(pair)
+
+        def _draw_route(pts, label):
+            c.create_line(*pts, fill=GLOW_OUT, width=9,  joinstyle="miter", tags="fwd_arrow")
+            c.create_line(*pts, fill=GLOW_MID, width=5,  joinstyle="miter", tags="fwd_arrow")
+            c.create_line(*pts, fill=FWD_COL,  width=2,  joinstyle="miter",
+                          arrow="last", arrowshape=(10, 13, 5), tags="fwd_arrow")
+
+            # Label badge on the vertical segment (P2→P3: pts[4..7])
+            vx = pts[4]; vy = (pts[5] + pts[7]) / 2
+            pad_x, pad_y = 5, 3
+            est_w = len(label) * 7; est_h = 13
+            bx0 = vx - est_w - pad_x*2 - 2
+            by0 = vy - est_h/2 - pad_y
+            c.create_rectangle(bx0, by0, bx0+est_w+pad_x*2, by0+est_h+pad_y*2,
+                                fill="#0d1f35", outline=FWD_COL, width=1, tags="fwd_arrow")
+            c.create_text(vx - pad_x - 2, vy + 1, text=label,
+                          font=(_CODE_FONT, 8, "bold"), fill=FWD_COL,
+                          anchor="e", tags="fwd_arrow")
+
+        for rank, (src_stage, dst_stage) in enumerate(unique):
+            if src_stage not in self._stage_rects or dst_stage not in self._stage_rects:
+                continue
+
+            sx0, sy0, sx1, sy1 = self._stage_rects[src_stage]
+            dx0, dy0, dx1, dy1 = self._stage_rects[dst_stage]
+            bulge = 42 + rank * 24   # rail distance left of stage edge
+
+            label = f"{src_stage}\u2192{dst_stage}"
+
+            # P0: bottom of source, shifted ~1/4 inward from left edge
+            inset = (sx1 - sx0) // 4
+            p0x, p0y = sx0 + inset, sy1
+            # P1: go DOWN
+            p1x, p1y = sx0 + inset, sy1 + DROP
+            # P2: go LEFT to rail
+            p2x, p2y = sx0 - bulge, sy1 + DROP
+            # P3: go UP to top-body of destination
+            p3x, p3y = sx0 - bulge, dy0 + HDR + 4
+            # P4: go RIGHT into destination
+            p4x, p4y = dx0, dy0 + HDR + 4
+
+            pts = [p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, p4x, p4y]
+            _draw_route(pts, label)
+
+        c.tag_raise("fwd_arrow")
+        c.tag_raise("tok")
+
+
     def _token_geom(self, stage):
         """Return (x, y, w, h) for a token inside stage — below the header stripe."""
         x0, y0, x1, y1 = self._stage_rects[stage]
@@ -1234,13 +1348,112 @@ class App(tk.Tk):
         self._stage_uid = {s: None for s in STAGES}
         self.canvas.delete("tok")
         self.canvas.delete("bubble")
+        self.canvas.delete("fwd_arrow")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # LOAD / STEP / AUTO / RESET
+    # EDITOR HELPERS  — gutter, scroll sync, syntax highlighting
     # ══════════════════════════════════════════════════════════════════════════
+    def _on_editor_scroll(self, *args):
+        """Keep gutter in sync when editor scrolls via mouse/keyboard."""
+        self._gutter.yview_moveto(args[0])
+
+    def _sync_editor_scroll(self, *args):
+        """Scrollbar commands forwarded to both widgets."""
+        self.editor.yview(*args)
+        self._gutter.yview(*args)
+
+    def _on_editor_key(self, event=None):
+        self._update_gutter()
+        self._highlight_syntax()
+
+    def _update_gutter(self):
+        """Rebuild the line-number gutter to match current editor content."""
+        lines = int(self.editor.index("end-1c").split(".")[0])
+        self._gutter.config(state="normal")
+        self._gutter.delete("1.0", "end")
+        for i in range(1, lines + 1):
+            self._gutter.insert("end", f"{i:>2}\n")
+        # Sync gutter width to number of digits
+        w = max(2, len(str(lines))) + 1
+        self._gutter.config(width=w, state="disabled")
+        # Keep gutter scrolled to same position as editor
+        self._gutter.yview_moveto(self.editor.yview()[0])
+
+    def _highlight_syntax(self):
+        """Apply colour tags for assembly syntax highlighting."""
+        import re as _re
+        ed = self.editor
+        # Remove all old syntax tags
+        for tag in ("op", "branch", "reg", "imm", "mem", "label_def", "comment", "current_line"):
+            ed.tag_remove(tag, "1.0", "end")
+
+        # Highlight current line
+        cur_line = ed.index("insert").split(".")[0]
+        ed.tag_add("current_line", f"{cur_line}.0", f"{cur_line}.end+1c")
+
+        content = ed.get("1.0", "end-1c")
+        line_start = 0
+        for lineno, line in enumerate(content.split("\n"), start=1):
+            base = f"{lineno}.0"
+
+            # — Comment  (; to end of line)
+            m = _re.search(r';.*$', line)
+            if m:
+                ed.tag_add("comment", f"{lineno}.{m.start()}", f"{lineno}.{m.end()}")
+                # Only highlight the code part before the comment
+                line = line[:m.start()]
+
+            # — Label definition  (word followed by colon at start)
+            m = _re.match(r'^(\w+):', line)
+            if m:
+                ed.tag_add("label_def", f"{lineno}.0", f"{lineno}.{m.end()}")
+                line = line[m.end():]  # strip label for further parsing
+                col_off = m.end()
+            else:
+                col_off = 0
+
+            stripped = line.lstrip()
+            indent   = len(line) - len(stripped)
+            col_off += indent
+
+            # — Opcode  (first token)
+            m = _re.match(r'^([A-Za-z]+)', stripped)
+            if m:
+                op = m.group(1).upper()
+                tag = "branch" if op in BRANCH_OPS else "op"
+                ed.tag_add(tag, f"{lineno}.{col_off}",
+                               f"{lineno}.{col_off + m.end()}")
+                rest      = stripped[m.end():]
+                rest_off  = col_off + m.end()
+            else:
+                rest     = stripped
+                rest_off = col_off
+
+            # — Memory  ([Rs+off] or [Rs])
+            for mm in _re.finditer(r'\[.*?\]', rest):
+                ed.tag_add("mem", f"{lineno}.{rest_off + mm.start()}",
+                                   f"{lineno}.{rest_off + mm.end()}")
+
+            # — Registers  (R0–R15 as whole words)
+            for mm in _re.finditer(r'\bR(1[0-5]|[0-9])\b', rest, _re.IGNORECASE):
+                ed.tag_add("reg", f"{lineno}.{rest_off + mm.start()}",
+                                   f"{lineno}.{rest_off + mm.end()}")
+
+            # — Immediates  (#number or bare ±number after comma)
+            # Two passes to avoid variable-width lookbehind (Python 3.14+)
+            for mm in _re.finditer(r'#-?\d+', rest):
+                ed.tag_add("imm", f"{lineno}.{rest_off + mm.start()}",
+                                   f"{lineno}.{rest_off + mm.end()}")
+            for mm in _re.finditer(r',\s*(-?\d+)\b', rest):
+                s = rest_off + mm.start(1)
+                ed.tag_add("imm", f"{lineno}.{s}",
+                                   f"{lineno}.{s + len(mm.group(1))}")
+
     def _load_sample(self, name):
-        self.editor.delete("1.0","end")
+        self.editor.delete("1.0", "end")
         self.editor.insert("1.0", SAMPLES[name])
+        self._highlight_syntax()
+        self._update_gutter()
 
     def _load_selected_sample(self):
         sel = self._sample_lb.curselection()
@@ -1344,6 +1557,18 @@ class App(tk.Tk):
 
         fwd_active = any(kind == "fwd" for kind, _ in state["events"])
         self._sync_tokens(state["pipe"], state["stall"], state["branch_flush"], fwd_active)
+
+        # Parse forwarding events into (from_stage, to_stage) pairs and draw arrows
+        # Event format: "FWD MEM->EX: R1 = 5  (...)" or "FWD MEM->MEM (WB->MEM): ..."
+        import re as _re
+        fwd_pairs = []
+        for kind, msg in state["events"]:
+            if kind == "fwd":
+                # Capture the first SRC->DST pattern, e.g. "MEM->EX" or "WB->MEM"
+                m = _re.search(r'FWD\s+(\w+)->(\w+)', msg)
+                if m:
+                    fwd_pairs.append((m.group(1), m.group(2)))
+        self._draw_forwarding_arrows(fwd_pairs)
 
         if state["stall"]:
             self.status_lbl.config(text="STALL", fg=AMBER)
