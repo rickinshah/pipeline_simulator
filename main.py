@@ -1073,13 +1073,13 @@ class App(tk.Tk):
         n      = len(STAGES)
         PX     = 20
         PY     = 10
-        GAP    = 10
+        GAP    = 28          # gap between stage cards (longer arrows)
         HDR    = 26          # height of the stage-name header stripe inside each box
-        sh     = 110         # fixed card height (taller = more square relative to width)
+        sh     = 130         # fixed card height (taller = more square)
         # Cap width so stages don't become ultra-wide rectangles
         sw     = min(max(W - 2*PX, 80), W - 2*PX)
         # Centre the stages horizontally if canvas is very wide
-        target_w = min(sw, int(sh * 3.5))  # max ~3.5:1 aspect ratio
+        target_w = min(sw, int(sh * 1.8))  # max ~1.8:1 aspect ratio → more square
         sx     = PX + max(0, (sw - target_w) // 2)
         sw     = target_w
 
@@ -1109,12 +1109,12 @@ class App(tk.Tk):
                           text=s, font=(_CODE_FONT, 11, "bold"),
                           fill=TOKEN_FG, tags="stage")
 
-            # downward arrow between stages
+            # downward arrow between stages (longer to fill the bigger gap)
             if i < n - 1:
                 ax = (x0 + x1) / 2
-                c.create_line(ax, y1+2, ax, y1+GAP-2,
+                c.create_line(ax, y1+3, ax, y1+GAP-4,
                                fill=ARROW_COL, width=2,
-                               arrow="last", arrowshape=(7, 9, 4), tags="stage")
+                               arrow="last", arrowshape=(8, 11, 5), tags="stage")
 
             self._stage_rects[s] = (x0, y0, x1, y1)
 
