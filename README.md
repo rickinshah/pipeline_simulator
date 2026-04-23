@@ -17,7 +17,7 @@ Each instruction is represented as a moving token that flows through the pipelin
 
 ## Demo
 
-
+https://github.com/user-attachments/assets/247c96c1-7573-4664-ac1f-f3ec21c7921e
 
 ## Features
 
