@@ -310,6 +310,8 @@ class Engine:
         self.predictor = TwoBitPredictor()
         # Always-current FSM state for persistent FSM glow (per branch in flight)
         self._fsm_state: int = _WT  # matches TwoBitPredictor._get() default for unseen branches
+        # CPU Status Flags — updated after every arithmetic/logic operation in WB
+        self.FLAGS = {"neg": False, "carry": False, "zero": False}
 
     def _mread(self, a):
         a &= 0xFFFFFFFF
@@ -348,24 +350,58 @@ class Engine:
         op = instr.op
         # resolve source values through forwarding network
         def R(reg): return self._forward_val(reg) if reg else 0
-        if op=="MOV":   instr.result = instr.imm
-        elif op=="ADD": instr.result = R(instr.src1)+R(instr.src2)
-        elif op=="SUB": instr.result = R(instr.src1)-R(instr.src2)
-        elif op=="AND": instr.result = R(instr.src1)&R(instr.src2)
-        elif op=="OR":  instr.result = R(instr.src1)|R(instr.src2)
-        elif op=="XOR": instr.result = R(instr.src1)^R(instr.src2)
-        elif op=="NEG": instr.result = -R(instr.src1)
-        elif op=="LD":  instr.addr   = R(instr.src1)+instr.offset
+        if op=="MOV":
+            instr.result = instr.imm
+            self._set_flags(instr.result)             # ZERO if imm==0, NEG if imm<0
+        elif op=="ADD":
+            a, b = R(instr.src1), R(instr.src2)
+            instr.result = a + b
+            self._set_flags(instr.result, carry=((a & 0xFFFFFFFF) + (b & 0xFFFFFFFF)) > 0xFFFFFFFF)
+        elif op=="SUB":
+            a, b = R(instr.src1), R(instr.src2)
+            instr.result = a - b
+            self._set_flags(instr.result, carry=(a & 0xFFFFFFFF) < (b & 0xFFFFFFFF))
+        elif op=="AND":
+            instr.result = R(instr.src1) & R(instr.src2)
+            self._set_flags(instr.result)             # carry always 0 for bitwise
+        elif op=="OR":
+            instr.result = R(instr.src1) | R(instr.src2)
+            self._set_flags(instr.result)
+        elif op=="XOR":
+            instr.result = R(instr.src1) ^ R(instr.src2)
+            self._set_flags(instr.result)             # ZERO when both operands equal
+        elif op=="NEG":
+            src = R(instr.src1)
+            instr.result = -src
+            self._set_flags(instr.result, carry=(src != 0))  # carry set if src was nonzero
+        elif op=="LD":
+            instr.addr = R(instr.src1) + instr.offset
+            # flags set in step() MEM stage after the value is loaded
         elif op=="ST":
-            instr.addr      = R(instr.dest)+instr.offset
+            instr.addr      = R(instr.dest) + instr.offset
             instr.store_val = R(instr.src1)
-        elif op=="JMP": instr.branch_taken = True
-        elif op=="BEQ": instr.branch_taken = R(instr.src1)==R(instr.src2)
-        elif op=="BNE": instr.branch_taken = R(instr.src1)!=R(instr.src2)
-        elif op=="BLT": instr.branch_taken = R(instr.src1)< R(instr.src2)
-        elif op=="BGT": instr.branch_taken = R(instr.src1)> R(instr.src2)
-        elif op=="BLE": instr.branch_taken = R(instr.src1)<=R(instr.src2)
-        elif op=="BGE": instr.branch_taken = R(instr.src1)>=R(instr.src2)
+            # ST stores a value but produces no result → flags unchanged
+        elif op=="JMP":
+            instr.branch_taken = True
+            # unconditional jump → no comparison → flags unchanged
+        elif op in ("BEQ","BNE","BLT","BGT","BLE","BGE"):
+            # All conditional branches do an implicit CMP (src1 − src2) and update flags,
+            # exactly like a real CPU compare-then-branch model.
+            a, b = R(instr.src1), R(instr.src2)
+            diff = a - b
+            self._set_flags(diff, carry=(a & 0xFFFFFFFF) < (b & 0xFFFFFFFF))
+            if   op=="BEQ": instr.branch_taken = (diff == 0)   # ZERO=1
+            elif op=="BNE": instr.branch_taken = (diff != 0)   # ZERO=0
+            elif op=="BLT": instr.branch_taken = (diff <  0)   # NEG=1
+            elif op=="BGT": instr.branch_taken = (diff >  0)   # NEG=0, ZERO=0
+            elif op=="BLE": instr.branch_taken = (diff <= 0)   # NEG=1 or ZERO=1
+            elif op=="BGE": instr.branch_taken = (diff >= 0)   # NEG=0
+
+    def _set_flags(self, result, carry=False):
+        """Update NEG, CARRY, ZERO flags from an ALU result."""
+        self.FLAGS["zero"]  = (result == 0)
+        self.FLAGS["neg"]   = (result < 0)
+        self.FLAGS["carry"] = carry
 
     def step(self):
         if self.done: return None
@@ -414,6 +450,7 @@ class Engine:
                     events.append(("fwd", f"FWD MEM->MEM (WB->MEM): {src} = {wb.result}  ({wb.label()} -> {i.label()})"))
             if i.op == "LD":
                 i.result = self._mread(i.addr)
+                self._set_flags(i.result)             # ZERO/NEG from loaded value; carry cleared
                 events.append(("mem", f"LD  [{i.addr}] -> {i.result}"))
             elif i.op == "ST":
                 self._mwrite(i.addr, i.store_val)
@@ -544,6 +581,7 @@ class Engine:
             if_pred_event=if_pred_event,
             pipe={s: p[s] for s in STAGES},
             regs=dict(self.REG),
+            flags=dict(self.FLAGS),
             mem=dict(self.MEM),
             stall=stall,
             stall_info=stall_info,
@@ -1003,6 +1041,29 @@ class App(tk.Tk):
                           width=8, anchor="e", padx=3)
             vl.grid(row=row_, column=col_*2+1, padx=(2,6), pady=1, sticky="ew")
             self.reg_labels[rn] = vl
+
+        # ── CPU Status Flags — shown in the empty space below registers ──────
+        sep = tk.Frame(grid, bg=BG3, height=1)
+        sep.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(6, 2))
+        tk.Label(grid, text="FLAGS", font=FLB, fg=CYAN, bg=BG2,
+                 anchor="w").grid(row=9, column=0, columnspan=4,
+                                  padx=4, pady=(0,4), sticky="w")
+
+        self._flag_labels = {}
+        _FLAG_DEFS = [
+            # (display_name, key,   color,  row, label_col, val_col)
+            ("NEG",   "neg",   RED,   10, 0, 1),
+            ("CARRY", "carry", AMBER, 10, 2, 3),
+            ("ZERO",  "zero",  GREEN, 11, 0, 1),
+        ]
+        for fname, fkey, fcol, frow, lcol, vcol in _FLAG_DEFS:
+            tk.Label(grid, text=fname, font=(_CODE_FONT, 8, "bold"),
+                     fg=FG3, bg=BG2, width=6, anchor="e"
+                     ).grid(row=frow, column=lcol, padx=(4, 0), pady=2, sticky="e")
+            fl = tk.Label(grid, text="0", font=FMB,
+                          fg=FG3, bg=BG4, width=3, anchor="c", relief="flat", padx=2)
+            fl.grid(row=frow, column=vcol, padx=(2, 6), pady=1, sticky="ew")
+            self._flag_labels[fkey] = (fl, fcol)
 
         hf = tk.Frame(p, bg=BG2)
         hf.grid(row=1, column=0, sticky="ew", pady=(0,4))
@@ -1479,7 +1540,8 @@ class App(tk.Tk):
         self._redraw_stages()
         self._clear_tokens()
         self._prev_regs = {f"R{i}": 0 for i in range(16)}
-        self._update_regs({f"R{i}": 0 for i in range(16)})
+        self._update_regs({f"R{i}": 0 for i in range(16)},
+                          {"neg": False, "carry": False, "zero": False})
         self.pc_lbl.config(text="0")
         self.cycle_lbl.config(text="CYCLE  0", fg=FG2)
 
@@ -1525,7 +1587,8 @@ class App(tk.Tk):
         self.status_lbl.config(text="")
         self.pc_lbl.config(text="--")
         self.hazard_lbl.config(text="--  clear", fg=GREEN)
-        self._update_regs({f"R{i}": 0 for i in range(16)})
+        self._update_regs({f"R{i}": 0 for i in range(16)},
+                          {"neg": False, "carry": False, "zero": False})
         self._update_mem({})
         # Clear predictor panel
         self.pred_total_lbl.config(text="0")
@@ -1591,7 +1654,7 @@ class App(tk.Tk):
         else:
             self.hazard_lbl.config(text="--  clear", fg=GREEN)
 
-        self._update_regs(state["regs"])
+        self._update_regs(state["regs"], state.get("flags"))
         self._update_mem(state["mem"])
         self._update_predictor_ui(state)
 
@@ -1602,7 +1665,7 @@ class App(tk.Tk):
         if state["done"]:
             self._finish()
 
-    def _update_regs(self, regs):
+    def _update_regs(self, regs, flags=None):
         for rn, lbl in self.reg_labels.items():
             val = regs.get(rn, 0)
             lbl.config(text=str(val))
@@ -1611,6 +1674,13 @@ class App(tk.Tk):
                 lbl.config(fg=GREEN, bg=flash_bg)
                 self.after(500, lambda l=lbl: l.config(fg=FG, bg=BG4))
         self._prev_regs = dict(regs)
+        # Update flag indicators
+        if flags is not None:
+            for fkey, (fl, fcol) in self._flag_labels.items():
+                active = flags.get(fkey, False)
+                fl.config(text="1" if active else "0",
+                          fg=fcol if active else FG3,
+                          bg="#1a1a2a" if active else BG4)
 
     def _update_mem(self, mem):
         self.mem_text.config(state="normal")
