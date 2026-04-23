@@ -256,7 +256,7 @@ class TwoBitPredictor:
         self.history: list[dict] = []
 
     def _get(self, idx):
-        return self._table.get(idx, _WNT)  # default: Weakly Taken
+        return self._table.get(idx, _WT)  # default: Weakly Taken
 
     def predict(self, instr) -> bool:
         """Return True if we predict taken."""
@@ -309,7 +309,7 @@ class Engine:
         self.done      = False
         self.predictor = TwoBitPredictor()
         # Always-current FSM state for persistent FSM glow (per branch in flight)
-        self._fsm_state: int = _WT   # default start state
+        self._fsm_state: int = _WT  # matches TwoBitPredictor._get() default for unseen branches
 
     def _mread(self, a):
         a &= 0xFFFFFFFF
