@@ -15,15 +15,19 @@ This project simulates a 6-stage instruction pipeline:
 
 Each instruction is represented as a moving token that flows through the pipeline stages, making internal behavior visually traceable.
 
+## Demo
+
+
+
 ## Features
 
 - Cycle-by-cycle pipeline execution
 - Two-pass assembler with label support
-- Load-use hazard detection (stalling)
-- Data forwarding (EX/MEM/WB → EX)
+- Data forwarding (EX/MEM → EX, MEM -> MEM)
+- Syntax Highlighting in code
+- 2-bit branch predictor
 - Supports conditional and unconditional branches:
     - `JMP`, `BEQ`, `BNE`, `BLT`, `BGT`, `BLE`, `BGE`
-- Pipeline flush on branch taken
 
 ## Supported Instructions Set
 
